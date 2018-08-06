@@ -1,12 +1,16 @@
 package workflow
 
-trait Node {
+import nl.biopet.utils.Logging
+
+import scala.concurrent.Future
+
+trait Node extends Logging {
 
   def key: String
 
-  def inputs: Inputs
+  val inputs: Inputs
 
-  def outputs: Outputs
+  val outputs: Outputs
 
-  def isDone: Boolean = outputs.allDone
+  def future: Future[_]
 }

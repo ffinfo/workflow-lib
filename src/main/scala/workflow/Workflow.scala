@@ -1,6 +1,8 @@
 package workflow
 
 import scala.collection.mutable.ListBuffer
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
 trait Workflow extends Node {
 
@@ -10,4 +12,6 @@ trait Workflow extends Node {
     subNodes += node
     node
   }
+
+  def future: Future[_] = Future.sequence(outputs.future :: subNodes.map(_.future).toList)
 }

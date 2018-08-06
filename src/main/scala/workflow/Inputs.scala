@@ -16,8 +16,14 @@ trait Inputs {
     }
   }
 
-  lazy val totalFuture: Future[Iterable[Any]] = Future.sequence(_allInputs.values.map(_.value))
+  protected def input[T](key: String): Input[T] = {
+    if (_allInputs.contains(key)) throw new IllegalArgumentException(s"Input '$key' already exists")
+    else {
+      val i = new Input[T](key)
+      _allInputs += (key -> i)
+      i
+    }
+  }
 
-  def allDone: Boolean = totalFuture.isCompleted
-
+  protected[workflow] lazy val future: Future[Iterable[Any]] = Future.sequence(_allInputs.values.map(_.value))
 }
