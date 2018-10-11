@@ -6,11 +6,16 @@ import scala.concurrent.Future
 
 trait Node extends Logging {
 
-  def key: String
+  type Inputs >: Product
+  type Outputs >: Product
 
-  val inputs: Inputs
 
-  val outputs: Outputs
+  def inputs: Inputs
+  def outputs: Outputs
 
-  def future: Future[_]
+  val root: Option[Workflow]
+
+  def key: String = this.getClass.getSimpleName
+
+  def start: Future[_]
 }

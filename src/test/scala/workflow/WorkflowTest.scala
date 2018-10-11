@@ -5,39 +5,34 @@ import org.testng.annotations.Test
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
+import Implicts._
+import workflow.jobs.Echo
 
 class WorkflowTest extends BiopetTest {
   @Test
   def test(): Unit = {
 
-    implicit def inputString[T](input: Input[T]): String = Await.result(input.value, Duration.Inf).toString
+    case class SubWorkflow(inputs: (String, String),
+                           outputs: (String, String),
+                           root: Option[Workflow] = None) extends Workflow {
 
-    class Echo extends CommandlineJob {
-
-      def key: String = "test"
-
-      object inputs extends Inputs {
-        val text: Input[String] = input("text")
+      def workflow(): Unit = {
+        val echo: Echo = call(Echo(Echo.Inputs("test"), Echo.Outputs(), this))
       }
-
-      def cmd: Seq[String] = Seq("echo", inputs.text)
-
-      object outputs extends Outputs
     }
 
-    val workflow = new Workflow {
-      def key: String = "workflow1"
+    case class TestWorkflow(inputs: (String, String),
+                       outputs: (String, String),
+                       root: Option[Workflow] = None) extends Workflow {
 
-      object inputs extends Inputs {
-        val arg1 = input("arg1", Future.successful("test"))
+      def workflow(): Unit = {
+        val echo: Echo = call(Echo(Echo.Inputs("test"), Echo.Outputs(), this))
+
+        val sub = call(SubWorkflow(("", ""), ("", ""), this))
       }
-
-      val echo: Echo = call(new Echo)
-      echo.inputs.text := this.inputs.arg1
-
-      object outputs extends Outputs
     }
 
-    Await.result(workflow.future, Duration.Inf)
+    val wf = TestWorkflow(("", ""), ("", ""))
+    Await.result(wf.start, Duration.Inf)
   }
 }

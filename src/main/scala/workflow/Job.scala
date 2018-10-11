@@ -1,15 +1,26 @@
 package workflow
 
+import java.io.File
+
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
 trait Job extends Node {
+
+  val id: Long = Job.next
+
   def run(): Future[_]
 
-  def readyToRun: Boolean = inputs.future.isCompleted
+  def readyToRun: Boolean = ???
 
-  lazy val future: Future[_] = inputs.future.flatMap { _ =>
-    logger.info(s"Start job '$key'")
-    run()
-  }.flatMap{_ => outputs.future}
+  lazy val start: Future[_] = run()
+}
+
+object Job {
+  private var count = 0L
+
+  private def next: Long = {
+    count += 1
+    count
+  }
 }
