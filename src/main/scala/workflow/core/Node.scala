@@ -4,7 +4,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Cancellable}
 
 import scala.concurrent.Future
 
-trait Node[Inputs <: Product, Outputs <: Product] {
+trait Node[Inputs <: Product, Outputs <: Product] extends WfActor {
 
   def inputs: Inputs
   private var _outputs: Option[Outputs] = None
@@ -39,35 +39,12 @@ trait Node[Inputs <: Product, Outputs <: Product] {
 
   def isDone: Boolean = status == Status.Done
 
-  private var _system: Option[ActorSystem] = None
-  def system: ActorSystem = {
-    _system match {
-      case Some(a) => a
-      case _ => throw new IllegalStateException("actor does not exist yet")
-    }
-  }
+  def passableInputs: Iterator[Passable[_]] = recursivePassable(inputs.productIterator)
 
-  private var _actor: Option[ActorRef] = None
-  def actor: ActorRef = {
-    _actor match {
-      case Some(a) => a
-      case _ => throw new IllegalStateException("actor does not exist yet")
-    }
-  }
-  protected def createActor(system: ActorSystem): ActorRef
-  def loadActor(s: ActorSystem): Unit = {
-    if (_actor.isDefined) throw  new IllegalStateException("Actor does already exist")
-    _system = Some(s)
-    _actor = Some(createActor(s))
-    actor.path
-  }
-
-  def futureInputs: Iterator[Future[_]] = recursiveFutures(inputs.productIterator)
-
-  private def recursiveFutures(list: Iterator[Any]): Iterator[Future[_]] = list.flatMap { x =>
+  private def recursivePassable(list: Iterator[Any]): Iterator[Passable[_]] = list.flatMap { x =>
     x match {
-      case x: Future[_] => Iterator(x)
-      case x: Product => recursiveFutures(x.productIterator)
+      case x: Passable[_] => Iterator(x)
+      case x: Product => recursivePassable(x.productIterator)
       case _ => Iterator()
     }
   }

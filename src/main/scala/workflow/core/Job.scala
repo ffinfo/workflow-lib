@@ -24,7 +24,6 @@ object Job {
     count
   }
 
-
   class JobActor[T <: Job[_ <: Product, _ <: Product]](job: T) extends Node.NodeActor[T] {
 
     def node: T = job
@@ -34,7 +33,7 @@ object Job {
         node.setStatus(Status.WaitingOnInputs)
         cancellable = Some(context.system.scheduler.schedule(Duration.Zero, 1 seconds, self, Message.CheckInputs))
       case Message.CheckInputs if node.status == Status.WaitingOnInputs =>
-        if (node.futureInputs.forall(_.isCompleted)) {
+        if (node.passableInputs.forall(_.isSet)) {
           cancellable.foreach(_.cancel())
           cancellable = None
           node.setStatus(Status.ReadyToStart)
