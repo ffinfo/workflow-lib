@@ -1,26 +1,42 @@
 package workflow.core
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Cancellable}
+import java.io.File
 
-import scala.concurrent.Future
+import akka.actor.{Actor, ActorLogging, ActorSystem, Cancellable}
 
-trait Node[Inputs <: Product, Outputs <: Product] extends WfActor {
+import scala.collection.mutable.ListBuffer
+import scala.reflect.ClassTag
 
-  def inputs: Inputs
-  private var _outputs: Option[Outputs] = None
-  final protected def setOutputs(o: Outputs): Unit = _outputs = Some(o)
-  def outputs: Outputs = {
-    _outputs match {
-      case Some(o) => o
-      case _ if status != Status.Done => throw new IllegalStateException(s"'$fullName' is not yet done")
-      case _ => throw new IllegalStateException("This should not happen, please report this")
+trait Node[Inputs <: Product] extends WfActor { node =>
+
+  abstract class NodeOutputs {
+    private val buffer: ListBuffer[Passable[_]] = ListBuffer()
+
+    protected def file: Passable[File] = output(_ => new File(""))
+    protected def string: Passable[String] = output(_ => "")
+    protected def int: Passable[Int] = output(_ => 0)
+    protected def long: Passable[Long] = output(_ => 0L)
+    protected def double: Passable[Double] = output(_ => 0.0)
+    protected def output[T](parser: Unit => T)(implicit classTag: ClassTag[T]): Passable[T] = {
+      val p = Passable[T](node, parser)
+      buffer += p
+      p
     }
+
+    def allOutputs: Iterator[Passable[_]] = buffer.iterator
   }
+
+  type Outputs <: NodeOutputs
+
+  val outputs: Outputs
+
+  val inputs: Inputs
+
   private var _status: Status.Value = Status.Init
   final def status: Status.Value = _status
   final protected def setStatus(s: Status.Value): Unit = _status = s
 
-  def root: Option[Workflow[_, _]]
+  def root: Option[Workflow[_]]
 
   def id: Long
 
@@ -30,7 +46,7 @@ trait Node[Inputs <: Product, Outputs <: Product] extends WfActor {
     path().map(_.name).mkString(",")
   }
 
-  def path(p: List[Node[_, _]] = List(this)): List[Node[_, _]] = p.headOption.map(_.root) match {
+  def path(p: List[Node[_]] = List(this)): List[Node[_]] = p.headOption.map(_.root) match {
     case Some(Some(x)) => path(x :: p)
     case _ => p
   }
@@ -51,7 +67,7 @@ trait Node[Inputs <: Product, Outputs <: Product] extends WfActor {
 }
 
 object Node {
-  trait NodeActor[T <: Node[_, _]] extends Actor with ActorLogging {
+  trait NodeActor[T <: Node[_]] extends Actor with ActorLogging {
 
     def node: T
 

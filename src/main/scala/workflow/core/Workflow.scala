@@ -5,18 +5,18 @@ import akka.actor._
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.Future
 import scala.reflect.ClassTag
-
 import scala.concurrent.ExecutionContext.Implicits.global
 
-trait Workflow[Inputs <: Product, Outputs <: Product] extends Node[Inputs, Outputs] {
+trait Workflow[Inputs <: Product] extends Node[Inputs] {
 
   val id: Long = Workflow.next
 
-  protected val subNodes = new ListBuffer[Node[_, _]]
+  protected val subNodes = new ListBuffer[Node[_]]
+  def allSubNodes: Iterator[Node[_]] = subNodes.iterator
 
-  def call[T <: Node[_, _]](node: T)(implicit classTag: ClassTag[T]): T = {
-    node.loadActor(system)
+  def call[T <: Node[_]](node: T)(implicit classTag: ClassTag[T]): T = {
     node.actor ! Message.NodeInit
+    node.passableInputs.foreach(_.addInputNode(node))
     subNodes += node
     node
   }
@@ -29,8 +29,7 @@ trait Workflow[Inputs <: Product, Outputs <: Product] extends Node[Inputs, Outpu
 
   def workflow(): Unit
 
-  def createActor(system: ActorSystem): ActorRef =
-    system.actorOf(Props(new Workflow.WorkflowActor(this)), fullName)
+  lazy val actor: ActorRef = system.actorOf(Props(new Workflow.WorkflowActor(this)), fullName)
 }
 
 object Workflow {
@@ -41,16 +40,31 @@ object Workflow {
     count
   }
 
-  class WorkflowActor[T <: Workflow[_, _]](workflow: T) extends Node.NodeActor[T] {
+  class WorkflowActor[T <: Workflow[_ <: Product]](workflow: T) extends Node.NodeActor[T] {
 
     def node: T = workflow
 
     override def receive: Receive = super.receive orElse {
       case Message.Init =>
-        node.setStatus(Status.ReadyToStart)
+        workflow.setStatus(Status.ReadyToStart)
         self ! Message.Start
+      case Message.SubNodeDone(node) =>
+        val all = workflow.allSubNodes.size
+        val done = workflow.allSubNodes.count(_.status == Status.Done)
+        log.info(s"Status: $done/$all")
+        if (all == done) self ! Message.Finish
       case Message.Start =>
-        node.start
+        workflow.start
+      case Message.Finish =>
+        if (workflow.allSubNodes.forall(_.status == Status.Done)) {
+          workflow.setStatus(Status.Done)
+          workflow.root match {
+            case Some(root) => root.actor ! Message.SubNodeDone(workflow)
+            case _ =>
+              log.info("Root workflow done")
+              context.system.terminate()
+          }
+        }
     }
   }
 }

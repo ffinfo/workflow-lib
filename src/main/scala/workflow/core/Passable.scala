@@ -6,7 +6,7 @@ import workflow.core.Message.SetPassable
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
-class Passable[T](val outputNode: Option[Node[_, _]])(implicit classTag: ClassTag[T]) extends WfActor {
+class Passable[T](val outputNode: Option[Node[_]], parser: Option[Unit => T])(implicit classTag: ClassTag[T], val system: ActorSystem) extends WfActor {
 
   private var _value: Option[T] = None
   def value: T = {
@@ -17,23 +17,33 @@ class Passable[T](val outputNode: Option[Node[_, _]])(implicit classTag: ClassTa
       case _ => throw new IllegalStateException("Value not set yet, this should not happen, please report this")
     }
   }
-  def setValue(v: T): Unit = _value = Some(v)
+  protected def setValue(v: T): Unit = {
+    outputNode.foreach(_.actor ! Message.ProcessOutputDone)
+    _value = Some(v)
+  }
 
   def isSet: Boolean = _value.isDefined
 
-  private var inputNodes: ListBuffer[Node[_, _]] = ListBuffer()
-  def addInputNode(node: Node[_, _]): Unit = inputNodes += node
+  private var inputNodes: ListBuffer[Node[_]] = ListBuffer()
+  def addInputNode(node: Node[_]): Unit = inputNodes += node
 
-  protected def createActor(system: ActorSystem): ActorRef = system.actorOf(Props(new Passable.PassableActor(this)))
+  private def parse(): T = {
+    parser match {
+      case Some(p) => p()
+      case _ => throw new IllegalStateException("No parser defined, is this a constant?")
+    }
+  }
+
+  val actor: ActorRef = system.actorOf(Props(new Passable.PassableActor(this)))
 }
 
 object Passable {
-  def apply[T](node: Node[_ <: Product, _ <: Product])(implicit classTag: ClassTag[T]): Passable[T] = {
-    new Passable[T](Some(node))
+  def apply[T](node: Node[_  <: Product], parser: Unit => T)(implicit classTag: ClassTag[T], actorSystem: ActorSystem): Passable[T] = {
+    new Passable[T](Some(node), Some(parser))
   }
 
-  def constant[T](value: T)(implicit classTag: ClassTag[T]): Passable[T] = {
-    val p = new Passable[T](None)
+  def constant[T](value: T)(implicit classTag: ClassTag[T], actorSystem: ActorSystem): Passable[T] = {
+    val p = new Passable[T](None, None)
     p.setValue(value)
     p
   }
@@ -45,8 +55,9 @@ object Passable {
           case classTag(v) => passable.setValue(v)
           case _ => throw new IllegalStateException("Wrong type")
         }
-
         passable.inputNodes.foreach(_.actor ! Message.CheckInputs)
+      case Message.ProcessOutputs if !passable.isSet =>
+        self ! SetPassable(passable.parse())
     }
   }
 }

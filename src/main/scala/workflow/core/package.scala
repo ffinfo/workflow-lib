@@ -4,7 +4,7 @@ package object core {
   case class Empty()
 
   object Status extends Enumeration {
-    val Init, WaitingOnInputs, ReadyToStart, Running, Done = Value
+    val Init, WaitingOnInputs, WaitingOnJob, ReadyToStart, Running, ProcessOutputs, Failed, Done = Value
   }
 
 }
