@@ -1,9 +1,12 @@
 package workflow.core
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
+import akka.dispatch.MessageDispatcher
 import workflow.core.Message.SetPassable
 
+import scala.concurrent.duration._
 import scala.collection.mutable.ListBuffer
+import scala.language.postfixOps
 import scala.reflect.ClassTag
 
 class Passable[T](val outputNode: Option[Node[_]], parser: Option[Unit => T])(implicit classTag: ClassTag[T], val system: ActorSystem) extends WfActor {
@@ -18,7 +21,7 @@ class Passable[T](val outputNode: Option[Node[_]], parser: Option[Unit => T])(im
     }
   }
   protected def setValue(v: T): Unit = {
-    outputNode.foreach(_.actor ! Message.ProcessOutputDone)
+    outputNode.foreach(x => system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputDone)(defaultDispatcher))
     _value = Some(v)
   }
 
@@ -49,15 +52,18 @@ object Passable {
   }
 
   class PassableActor[T](passable: Passable[T])(implicit classTag: ClassTag[T]) extends Actor with ActorLogging {
+
+    val defaultDispatcher: MessageDispatcher = context.system.dispatchers.lookup("default-dispatcher")
+
     def receive: Receive = {
       case SetPassable(value) =>
         value match {
           case classTag(v) => passable.setValue(v)
           case _ => throw new IllegalStateException("Wrong type")
         }
-        passable.inputNodes.foreach(_.actor ! Message.CheckInputs)
+        passable.inputNodes.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.CheckInputs)(defaultDispatcher))
       case Message.ProcessOutputs if !passable.isSet =>
-        self ! SetPassable(passable.parse())
+        context.system.scheduler.scheduleOnce(defaultWaitTime, self, SetPassable(passable.parse()))(defaultDispatcher)
     }
   }
 }

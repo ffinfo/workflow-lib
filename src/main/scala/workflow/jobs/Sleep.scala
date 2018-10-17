@@ -3,8 +3,8 @@ package workflow.jobs
 import akka.actor.ActorSystem
 import workflow.core.{CommandlineJob, Passable, Workflow}
 
-case class Sleep(inputs: Sleep.Inputs,
-                 root: Option[Workflow[_ <: Product]])(implicit val system: ActorSystem) extends CommandlineJob[Sleep.Inputs] {
+class Sleep(val inputs: Sleep.Inputs,
+            val root: Option[Workflow[_ <: Product]])(implicit val system: ActorSystem) extends CommandlineJob[Sleep.Inputs] {
 
   def cmd: String = s"sleep ${inputs.time.value}"
 

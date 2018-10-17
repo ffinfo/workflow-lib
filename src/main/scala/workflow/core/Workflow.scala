@@ -4,8 +4,9 @@ import akka.actor._
 
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.language.postfixOps
 import scala.reflect.ClassTag
-import scala.concurrent.ExecutionContext.Implicits.global
 
 trait Workflow[Inputs <: Product] extends Node[Inputs] {
 
@@ -13,9 +14,16 @@ trait Workflow[Inputs <: Product] extends Node[Inputs] {
 
   protected val subNodes = new ListBuffer[Node[_]]
   def allSubNodes: Iterator[Node[_]] = subNodes.iterator
+  def allJobs: Iterator[Job[_ <: Product]] = subNodes.iterator.flatMap {
+    _ match {
+      case job: Job[Product] => Iterator(job)
+      case workflow: Workflow[_] => workflow.allJobs
+      case _ => Iterator()
+    }
+  }
 
   def call[T <: Node[_]](node: T)(implicit classTag: ClassTag[T]): T = {
-    node.actor ! Message.NodeInit
+    system.scheduler.scheduleOnce(defaultWaitTime, node.actor, Message.NodeInit)
     node.passableInputs.foreach(_.addInputNode(node))
     subNodes += node
     node
@@ -44,27 +52,52 @@ object Workflow {
 
     def node: T = workflow
 
-    override def receive: Receive = super.receive orElse {
+    override def receive: Receive = {
+      case Message.Status =>
+        val backends = workflow.allJobs.flatMap{
+          case j: CommandlineJob[Product] => Some(j)
+          case _ => None
+        }.toList.groupBy(_.backend)
+
+        backends.foreach { case (backend, jobs) =>
+          val status = jobs.groupBy(_.status)
+          val queued: List[CommandlineJob[_ <: Product]] = status.getOrElse(Status.Queued, Nil)
+          val running: List[CommandlineJob[_ <: Product]] = status.getOrElse(Status.Running, Nil)
+          context.system.scheduler.scheduleOnce(50 milliseconds, backend.actor, Message.PollJobs(queued, running))(defaultDispatcher)
+        }
+
+        val counts = workflow.allJobs.toList.groupBy(_.status).map(x => x._1 -> x._2.size)
+        log.info("Status: " + counts.map(x => s"${x._1}: ${x._2}").mkString(", "))
       case Message.Init =>
         workflow.setStatus(Status.ReadyToStart)
-        self ! Message.Start
+        context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Start)(defaultDispatcher)
       case Message.SubNodeDone(node) =>
         val all = workflow.allSubNodes.size
         val done = workflow.allSubNodes.count(_.status == Status.Done)
-        log.info(s"Status: $done/$all")
-        if (all == done) self ! Message.Finish
+        if (all == done) context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Finish)(defaultDispatcher)
       case Message.Start =>
         workflow.start
+//      case Message.ProcessOutputDone if node.status == Status.ProcessOutputs =>
+//        if (node.outputs.allOutputs.forall(_.isSet)) {
+//          context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Finish)(defaultDispatcher)
+//        }
+      case Message.ProcessOutputDone if node.status == Status.Running =>
+        //TODO
+      case Message.ProcessOutputs if node.status == Status.Running =>
+        log.info("Process outputs")
+        node.outputs.allOutputs.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputs)(defaultDispatcher))
+        context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.ProcessOutputDone)(defaultDispatcher)
       case Message.Finish =>
         if (workflow.allSubNodes.forall(_.status == Status.Done)) {
           workflow.setStatus(Status.Done)
           workflow.root match {
-            case Some(root) => root.actor ! Message.SubNodeDone(workflow)
+            case Some(root) => context.system.scheduler.scheduleOnce(defaultWaitTime, root.actor, Message.SubNodeDone(workflow))(defaultDispatcher)
             case _ =>
               log.info("Root workflow done")
               context.system.terminate()
           }
         }
+      case m => super.receive(m)
     }
   }
 }

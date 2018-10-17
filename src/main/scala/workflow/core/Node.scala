@@ -3,11 +3,18 @@ package workflow.core
 import java.io.File
 
 import akka.actor.{Actor, ActorLogging, ActorSystem, Cancellable}
+import akka.dispatch.MessageDispatcher
+import com.typesafe.config.{Config, ConfigFactory}
+import workflow.core.backend.{Backend, Nohup}
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 trait Node[Inputs <: Product] extends WfActor { node =>
+
+  implicit val executionContext: MessageDispatcher = system.dispatchers.lookup("default-dispatcher")
 
   abstract class NodeOutputs {
     private val buffer: ListBuffer[Passable[_]] = ListBuffer()
@@ -15,7 +22,7 @@ trait Node[Inputs <: Product] extends WfActor { node =>
     protected def file: Passable[File] = output(_ => new File(""))
     protected def string: Passable[String] = output(_ => "")
     protected def int: Passable[Int] = output(_ => 0)
-    protected def long: Passable[Long] = output(_ => 0L)
+    protected def long: Passable[Long] = output(_ => 10L)
     protected def double: Passable[Double] = output(_ => 0.0)
     protected def output[T](parser: Unit => T)(implicit classTag: ClassTag[T]): Passable[T] = {
       val p = Passable[T](node, parser)
@@ -34,7 +41,7 @@ trait Node[Inputs <: Product] extends WfActor { node =>
 
   private var _status: Status.Value = Status.Init
   final def status: Status.Value = _status
-  final protected def setStatus(s: Status.Value): Unit = _status = s
+  final protected[core] def setStatus(s: Status.Value): Unit = _status = s
 
   def root: Option[Workflow[_]]
 
@@ -64,10 +71,23 @@ trait Node[Inputs <: Product] extends WfActor { node =>
       case _ => Iterator()
     }
   }
+
+  val config: Config = ConfigFactory.load()
+  lazy val backend: Backend = {
+    val key = if (config.hasPath("backend"))
+      config.getString("backend")
+    else "nohup"
+    Backend.backends().get(key) match {
+      case Some(b) => b
+      case _ => throw new IllegalArgumentException(s"Backend '$key' does not exists")
+    }
+  }
 }
 
 object Node {
   trait NodeActor[T <: Node[_]] extends Actor with ActorLogging {
+
+    val defaultDispatcher: MessageDispatcher = context.system.dispatchers.lookup("default-dispatcher")
 
     def node: T
 
@@ -75,7 +95,9 @@ object Node {
 
     def receive: Receive = {
       case Message.NodeInit if node.status == Status.Init || node.status == Status.Init =>
-        self ! Message.Init
+        context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Init)(defaultDispatcher)
+      case m =>
+        log.error("Message not picked up: " + m + ", for: " + node.fullName + ", with status: " + node.status + ", from: " + context.sender())
     }
   }
 }

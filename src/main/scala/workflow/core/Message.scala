@@ -1,8 +1,11 @@
 package workflow.core
 
 object Message extends Enumeration {
-  val NodeInit, Init, CheckInputs, Start, PollJob, ProcessOutputs, ProcessOutputDone, Failed, Finish = Value
+  val NodeInit, Status, Init, CheckInputs, Start, ProcessOutputs, ProcessOutputDone, Failed, Finish = Value
 
   case class SetPassable[T](value: T)
   case class SubNodeDone(node: Node[_ <: Product])
+  case class ExecuteJob(job: CommandlineJob[_ <: Product])
+  case class PollJobs(queued: List[CommandlineJob[_ <: Product]], running: List[CommandlineJob[_ <: Product]])
+  case class ExecuteJobs(jobs: List[CommandlineJob[_ <: Product]])
 }

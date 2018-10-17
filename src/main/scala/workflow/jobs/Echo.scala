@@ -2,8 +2,8 @@ package workflow.jobs
 
 import akka.actor.ActorSystem
 import workflow.core.{CommandlineJob, Passable, Workflow}
-case class Echo(inputs: Echo.Inputs,
-                root: Option[Workflow[_]])(implicit val system: ActorSystem) extends CommandlineJob[Echo.Inputs] {
+class Echo(val inputs: Echo.Inputs,
+           val root: Option[Workflow[_]])(implicit val system: ActorSystem) extends CommandlineJob[Echo.Inputs] {
 
   def cmd: String = s"echo ${inputs.text.value}"
 
