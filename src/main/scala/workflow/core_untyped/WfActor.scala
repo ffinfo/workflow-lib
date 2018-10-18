@@ -1,4 +1,4 @@
-package workflow.core
+package workflow.core_untyped
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.dispatch.MessageDispatcher

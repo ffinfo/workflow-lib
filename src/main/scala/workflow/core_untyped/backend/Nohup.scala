@@ -1,7 +1,7 @@
-package workflow.core.backend
+package workflow.core_untyped.backend
 
 import akka.actor.ActorSystem
-import workflow.core.CommandlineJob
+import workflow.core_untyped.CommandlineJob
 
 class Nohup(implicit val system: ActorSystem) extends DispatchSharedFileSystem {
 

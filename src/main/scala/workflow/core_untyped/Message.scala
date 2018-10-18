@@ -1,7 +1,7 @@
-package workflow.core
+package workflow.core_untyped
 
 object Message extends Enumeration {
-  val NodeInit, Status, Init, CheckInputs, Start, ProcessOutputs, ProcessOutputDone, Failed, Finish = Value
+  val NodeInit, Status, Init, CheckInputs, Start, CheckExitCode, ProcessOutputs, ProcessOutputDone, Failed, Finish = Value
 
   case class SetPassable[T](value: T)
   case class SubNodeDone(node: Node[_ <: Product])

@@ -1,9 +1,9 @@
-package workflow.core.backend
+package workflow.core_untyped.backend
 
 import java.io.File
 
 import akka.dispatch.MessageDispatcher
-import workflow.core.CommandlineJob
+import workflow.core_untyped.CommandlineJob
 import workflow.utils.Io
 
 import scala.concurrent.{Await, Future}

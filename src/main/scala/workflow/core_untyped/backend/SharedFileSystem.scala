@@ -1,12 +1,13 @@
-package workflow.core.backend
+package workflow.core_untyped.backend
 
 import java.io.File
 
 import akka.dispatch.MessageDispatcher
-import workflow.core.CommandlineJob
+import workflow.core_untyped.CommandlineJob
 import workflow.utils.Io
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
+import scala.io.Source
 
 trait SharedFileSystem extends Backend {
 
@@ -46,6 +47,16 @@ trait SharedFileSystem extends Backend {
     Io.writeFile(template(job), scriptFile(job))
     file.setExecutable(true)
     file
+  }(ioDispatcher)
+
+  protected[core_untyped] def pollExitCode(job: CommandlineJob[_ <: Product]): Future[Option[String]] = Future {
+    val file = rcFile(job)
+    if (file.exists()) {
+      val reader = Source.fromFile(file)
+      val content = reader.getLines().mkString("\n")
+      reader.close()
+      Some(content)
+    } else None
   }(ioDispatcher)
 
   def template(job: CommandlineJob[_ <: Product]): String = {

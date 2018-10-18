@@ -1,4 +1,4 @@
-package workflow.core
+package workflow.core_untyped
 
 import akka.actor._
 
@@ -22,6 +22,14 @@ trait Workflow[Inputs <: Product] extends Node[Inputs] {
     }
   }
 
+  def allSubWorkflows: Iterator[Workflow[_ <: Product]] = subNodes.iterator.flatMap {
+    _ match {
+      case workflow: Workflow[Product] => workflow.allSubWorkflows ++ Iterator(workflow)
+      case _ => Iterator()
+    }
+  }
+
+
   def call[T <: Node[_]](node: T)(implicit classTag: ClassTag[T]): T = {
     system.scheduler.scheduleOnce(defaultWaitTime, node.actor, Message.NodeInit)
     node.passableInputs.foreach(_.addInputNode(node))
@@ -31,7 +39,6 @@ trait Workflow[Inputs <: Product] extends Node[Inputs] {
 
   protected lazy val start: Future[Unit] = {
     require(status == Status.ReadyToStart)
-    setStatus(Status.Running)
     Future { workflow() }
   }
 
@@ -76,24 +83,21 @@ object Workflow {
         val done = workflow.allSubNodes.count(_.status == Status.Done)
         if (all == done) context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Finish)(defaultDispatcher)
       case Message.Start =>
-        workflow.start
-//      case Message.ProcessOutputDone if node.status == Status.ProcessOutputs =>
-//        if (node.outputs.allOutputs.forall(_.isSet)) {
-//          context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Finish)(defaultDispatcher)
-//        }
+        workflow.start.map(_ => node.setStatus(Status.Running))(defaultDispatcher)
       case Message.ProcessOutputDone if node.status == Status.Running =>
         //TODO
       case Message.ProcessOutputs if node.status == Status.Running =>
         log.info("Process outputs")
         node.outputs.allOutputs.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputs)(defaultDispatcher))
         context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.ProcessOutputDone)(defaultDispatcher)
-      case Message.Finish =>
-        if (workflow.allSubNodes.forall(_.status == Status.Done)) {
-          workflow.setStatus(Status.Done)
+      case Message.Finish if node.status == Status.Running =>
+        if (workflow.allSubNodes.forall(_.status == Status.Done) && workflow.allSubWorkflows.forall(_.start.isCompleted)) {
+          node.setStatus(Status.Done)
+          log.info("Workflow done")
           workflow.root match {
             case Some(root) => context.system.scheduler.scheduleOnce(defaultWaitTime, root.actor, Message.SubNodeDone(workflow))(defaultDispatcher)
             case _ =>
-              log.info("Root workflow done")
+              log.info("Shutdown")
               context.system.terminate()
           }
         }

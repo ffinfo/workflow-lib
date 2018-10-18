@@ -1,11 +1,11 @@
-package workflow.core
+package workflow.core_untyped
 
 import java.io.File
 
 import akka.actor.{Actor, ActorLogging, ActorSystem, Cancellable}
 import akka.dispatch.MessageDispatcher
 import com.typesafe.config.{Config, ConfigFactory}
-import workflow.core.backend.{Backend, Nohup}
+import workflow.core_untyped.backend.{Backend, Nohup}
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
@@ -19,11 +19,12 @@ trait Node[Inputs <: Product] extends WfActor { node =>
   abstract class NodeOutputs {
     private val buffer: ListBuffer[Passable[_]] = ListBuffer()
 
-    protected def file: Passable[File] = output(_ => new File(""))
-    protected def string: Passable[String] = output(_ => "")
-    protected def int: Passable[Int] = output(_ => 0)
-    protected def long: Passable[Long] = output(_ => 10L)
-    protected def double: Passable[Double] = output(_ => 0.0)
+    protected def file(path: String): Passable[File] = output(_ => new File(path))
+    protected def file(file: File): Passable[File] = output(_ => file)
+    protected def string(string: String): Passable[String] = output(_ => string)
+    protected def int(int: Int): Passable[Int] = output(_ => int)
+    protected def long(long: Long): Passable[Long] = output(_ => long)
+    protected def double(double: Double): Passable[Double] = output(_ => double)
     protected def output[T](parser: Unit => T)(implicit classTag: ClassTag[T]): Passable[T] = {
       val p = Passable[T](node, parser)
       buffer += p
@@ -41,7 +42,7 @@ trait Node[Inputs <: Product] extends WfActor { node =>
 
   private var _status: Status.Value = Status.Init
   final def status: Status.Value = _status
-  final protected[core] def setStatus(s: Status.Value): Unit = _status = s
+  final protected[core_untyped] def setStatus(s: Status.Value): Unit = _status = s
 
   def root: Option[Workflow[_]]
 

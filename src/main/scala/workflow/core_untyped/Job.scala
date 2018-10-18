@@ -1,4 +1,4 @@
-package workflow.core
+package workflow.core_untyped
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.dispatch.MessageDispatcher
@@ -48,7 +48,7 @@ object Job {
         if (total == done) {
           node.setStatus(Status.ReadyToStart)
           context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Start)
-        } else log.info(s"Wait on inputs, $done/$total")
+        } else log.debug(s"Wait on inputs, $done/$total")
       case Message.Start if node.status == Status.ReadyToStart =>
         log.info("Starting")
         node.setStatus(Status.Running)
@@ -62,17 +62,17 @@ object Job {
             context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Failed)
             throw e
         })
-      case Message.ProcessOutputs if node.status == Status.Running =>
-        log.info("Process outputs")
+      case Message.ProcessOutputs if node.status == Status.Running || node.status == Status.WaitingOnExitCode =>
+        log.debug("Process outputs")
         node.setStatus(Status.ProcessOutputs)
-        node.outputs.allOutputs.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputs)(defaultDispatcher))
+        node.outputs.allOutputs.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputs)(defaultDispatcher, self))
         context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.ProcessOutputDone)(defaultDispatcher)
       case Message.ProcessOutputDone if node.status == Status.ProcessOutputs =>
         if (node.outputs.allOutputs.forall(_.isSet)) {
           context.system.scheduler.scheduleOnce(defaultWaitTime, self, Message.Finish)
         }
       case Message.Finish if node.status == Status.ProcessOutputs =>
-        log.info("Finish")
+        log.info("Job done")
         node.setStatus(Status.Done)
         node.root.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.SubNodeDone(node)))
       case Message.Failed =>

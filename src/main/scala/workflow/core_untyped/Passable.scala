@@ -1,8 +1,8 @@
-package workflow.core
+package workflow.core_untyped
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
 import akka.dispatch.MessageDispatcher
-import workflow.core.Message.SetPassable
+import workflow.core_untyped.Message.SetPassable
 
 import scala.concurrent.duration._
 import scala.collection.mutable.ListBuffer
@@ -21,11 +21,14 @@ class Passable[T](val outputNode: Option[Node[_]], parser: Option[Unit => T])(im
     }
   }
   protected def setValue(v: T): Unit = {
-    outputNode.foreach(x => system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputDone)(defaultDispatcher))
     _value = Some(v)
   }
 
   def isSet: Boolean = _value.isDefined
+
+  private[core_untyped] def reset(): Unit = {
+    _value = None
+  }
 
   private var inputNodes: ListBuffer[Node[_]] = ListBuffer()
   def addInputNode(node: Node[_]): Unit = inputNodes += node
@@ -53,7 +56,7 @@ object Passable {
 
   class PassableActor[T](passable: Passable[T])(implicit classTag: ClassTag[T]) extends Actor with ActorLogging {
 
-    val defaultDispatcher: MessageDispatcher = context.system.dispatchers.lookup("default-dispatcher")
+    implicit val defaultDispatcher: MessageDispatcher = context.system.dispatchers.lookup("default-dispatcher")
 
     def receive: Receive = {
       case SetPassable(value) =>
@@ -61,9 +64,16 @@ object Passable {
           case classTag(v) => passable.setValue(v)
           case _ => throw new IllegalStateException("Wrong type")
         }
-        passable.inputNodes.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.CheckInputs)(defaultDispatcher))
+        if (passable.outputNode.map(_.status) == Some(Status.Running)) {
+          val bla = passable
+          ""
+          Thread.sleep(1000)
+          ""
+        }
+        passable.outputNode.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.ProcessOutputDone))
+        passable.inputNodes.foreach(x => context.system.scheduler.scheduleOnce(defaultWaitTime, x.actor, Message.CheckInputs))
       case Message.ProcessOutputs if !passable.isSet =>
-        context.system.scheduler.scheduleOnce(defaultWaitTime, self, SetPassable(passable.parse()))(defaultDispatcher)
+        context.system.scheduler.scheduleOnce(defaultWaitTime, self, SetPassable(passable.parse()))
     }
   }
 }

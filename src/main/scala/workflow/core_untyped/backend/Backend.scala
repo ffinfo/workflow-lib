@@ -1,17 +1,14 @@
-package workflow.core.backend
+package workflow.core_untyped.backend
 
 import java.io.File
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Cancellable, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
 import akka.dispatch.MessageDispatcher
-import akka.dispatch.sysmsg.Failed
 import com.typesafe.config.{Config, ConfigFactory}
-import workflow.core.{CommandlineJob, Message, Status, WfActor, defaultWaitTime}
+import workflow.core_untyped._
 
-import scala.collection.parallel.{ParIterable, Splitter}
-import scala.collection.parallel.mutable.{ParMap, ParSeq, ParSet}
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
@@ -24,6 +21,7 @@ trait Backend extends WfActor {
   val config: Config = ConfigFactory.load()
 
   val maxConcurentJobs: Int = 100
+  val maxRetries: Int = 3
 
   private def executeJob(job: CommandlineJob[_ <: Product])(implicit ec: ExecutionContext): Future[Unit] = {
     submitJob(job).map { id =>
@@ -33,14 +31,22 @@ trait Backend extends WfActor {
   }
 
   final protected def jobDone(job: CommandlineJob[_ <: Product]): Unit = {
-    system.scheduler.scheduleOnce(defaultWaitTime, job.actor, Message.ProcessOutputs)(ioDispatcher)
+    job.setStatus(Status.WaitingOnExitCode)
+    job.jobId = None
+    system.scheduler.scheduleOnce(defaultWaitTime, job.actor, Message.CheckExitCode)(ioDispatcher)
   }
 
   protected def submitJob(job: CommandlineJob[_ <: Product]): Future[String]
 
   protected def poll(running: List[CommandlineJob[_ <: Product]]): Unit
 
+  protected[core_untyped] def pollExitCode(job: CommandlineJob[_ <: Product]): Future[Option[String]]
+
   val actor: ActorRef = system.actorOf(Props(new Backend.BackendActor(this)))
+
+  def stdoutFile(job: CommandlineJob[_ <: Product]): File
+
+  def stderrFile(job: CommandlineJob[_ <: Product]): File
 }
 
 object Backend {
