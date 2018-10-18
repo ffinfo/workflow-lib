@@ -1,8 +1,5 @@
-package workflow.core_untyped
-
-import akka.NotUsed
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.{ ActorRef, ActorSystem, Behavior, DispatcherSelector, Terminated }
+import akka.actor.typed.{ActorRef, ActorSystem, Behavior}
 
 object Test extends App {
   val system: ActorSystem[HelloWorldMain.Start] =
